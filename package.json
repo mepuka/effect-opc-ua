@@ -1,5 +1,5 @@
 {
-  "name": "effect-mcp",
+  "name": "effect-opc-ua",
   "version": "0.1.14",
   "type": "module",
   "publishConfig": {
@@ -7,7 +7,7 @@
     "directory": "dist"
   },
   "bin": {
-    "effect-mcp": "./dist/main.cjs"
+    "effect-opcua-mcp": "./dist/main.cjs"
   },
   "files": [
     "dist",
@@ -16,18 +16,20 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup && tsx ./scripts/copy-package-json.ts",
     "dev": "tsx --watch src/main.ts",
-    "prepublishOnly": "pnpm build"
+    "build": "tsup",
+    "postbuild": "node --experimental-strip-types scripts/copy-package-json.ts && cp README.md dist/ && cp LICENSE dist/"
+  },
+  "dependencies": {
+    "@effect/ai": "^0.29.1",
+    "@effect/platform": "^0.92.1",
+    "@effect/platform-node": "^0.98.3",
+    "effect": "latest",
+    "fast-xml-parser": "^5.3.0"
   },
   "devDependencies": {
-    "@changesets/changelog-github": "^0.5.1",
-    "@changesets/cli": "^2.29.6",
-    "@effect/language-service": "^0.37.0",
-    "@effect/platform-node": "https://pkg.pr.new/Effect-TS/effect-smol/@effect/platform-node@7b514c2",
     "@types/node": "^24.3.1",
     "@types/unist": "^3.0.3",
-    "effect": "https://pkg.pr.new/Effect-TS/effect-smol/effect@7b514c2",
     "minisearch": "^7.1.2",
     "prettier": "^3.6.2",
     "remark-frontmatter": "^5.0.0",
@@ -39,6 +41,5 @@
     "typescript": "^5.9.2",
     "unified": "^11.0.5"
   },
-  "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac",
-  "dependencies": {}
+  "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac"
 }
