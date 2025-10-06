@@ -1,41 +1,45 @@
-# Effect OPC UA MCP Server (WIP)
+# Effect OPC UA MCP Server
 
-This project provides an MCP server exposing tools and resources to explore official OPC UA NodeSets and curated OPC UA guides using Effect. It is intended for OPC UA members and implementers evaluating Effect-based workflows.
+**WIP - Work in Progress. Needs optimization.**
 
-## What it does
+MCP server for OPC UA NodeSet exploration using Effect. Provides semantic search over OPC UA information models and static guides.
 
-- Exposes a semantic search tool over OPC UA NodeSets (Core + DI + selected companions) to retrieve nodes and their references as Markdown.
-- Provides quick-links resources to official OPC UA specs and companion models.
-- Runs as a CLI MCP server over stdio, suitable for IDE MCP clients (Cursor, Claude Code, etc.).
+## Current Functionality
 
-## Status
+**Tools:**
 
-- Work-in-progress. Interfaces and outputs may change.
+- `opcua_doc_search(query)` - Search OPC UA NodeSets (Core, DI, PackML, ADI, AutoID, Machinery, Robotics)
+- `get_opcua_doc(documentId, page?)` - Retrieve node documentation as Markdown
+- `opcua_nodeset_list()` - List available NodeSet catalog entries
 
-## Install & Run
+**Resources:**
 
-- npx: `npx -y effect-opc-ua@latest`
-- Local build: `pnpm build && node dist/main.cjs`
+- OPC UA guides and best practices (static content)
 
-In Cursor, add to your `mcp.json`:
+## Installation
+
+```bash
+npx -y effect-opc-ua@latest
+```
+
+**Cursor MCP config:**
 
 ```json
-"opcua-mcp": {
-  "command": "npx",
-  "args": ["-y", "effect-opc-ua@latest"]
+{
+  "opcua-mcp": {
+    "command": "npx",
+    "args": ["-y", "effect-opc-ua@latest"]
+  }
 }
 ```
 
-## Available tools
+## Status & Limitations
 
-- `opcua_doc_search(query: string)` → semantic search across loaded NodeSets.
-- `get_opcua_doc(documentId: number, page?: number)` → retrieve Markdown for a result.
-
-## Notes for members
-
-- Sources: UA-Nodeset (Core, DI, selected companions).
-- Results include forward/inverse references and browse paths for navigation.
-- Contribution welcome; please open issues with model coverage requests.
+- **WIP**: Interfaces may change
+- **Performance**: Initial load time slow due to NodeSet parsing and indexing
+- **Memory**: High memory usage during startup
+- **Coverage**: Limited to subset of companion specifications
+- **Optimization needed**: Caching, lazy loading, and performance improvements required
 
 ## License
 
