@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "tsx --watch src/main.ts",
     "build": "tsup",
+    "check": "tsc -b --noEmit tsconfig.json",
     "postbuild": "node --experimental-strip-types scripts/copy-package-json.ts && cp README.md dist/ && cp LICENSE dist/"
   },
   "dependencies": {

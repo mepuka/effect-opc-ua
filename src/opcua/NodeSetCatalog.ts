@@ -30,8 +30,7 @@ const catalogEntries: ReadonlyArray<NodeSetCatalogEntry> = [
     description:
       "Companion specification defining reusable components for device integration models.",
     category: "Companion Specification",
-    documentationUrl:
-      "https://reference.opcfoundation.org/DI/v103/docs/",
+    documentationUrl: "https://reference.opcfoundation.org/DI/v103/docs/",
     tags: ["device", "integration", "companion"],
     namespaceUris: ["http://opcfoundation.org/UA/DI/"],
     nodeSetUrl:

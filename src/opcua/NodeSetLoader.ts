@@ -12,6 +12,7 @@ import {
   NodeSetCatalogEntry,
 } from "./types.js"
 import { NodeSetCatalog } from "./NodeSetCatalog.js"
+import { NodeHttpClient } from "@effect/platform-node"
 
 const retryPolicy = Schedule.spaced(Duration.seconds(3))
 
@@ -20,9 +21,7 @@ class NodeSetLoaderError extends Data.TaggedError("NodeSetLoaderError")<{
   message: string
 }> {}
 
-const mergeNodeSets = (
-  nodeSets: ReadonlyArray<NodeSet>,
-): NodeSet =>
+const mergeNodeSets = (nodeSets: ReadonlyArray<NodeSet>): NodeSet =>
   new NodeSet({
     namespaces: nodeSets.flatMap((ns) => ns.namespaces),
     nodes: nodeSets.flatMap((ns) => ns.nodes),
@@ -251,7 +250,10 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
             }),
         }).pipe(
           Effect.tapErrorCause((cause) =>
-            Effect.logError(`XML parsing failed for ${entry.nodeSetUrl}`, cause),
+            Effect.logError(
+              `XML parsing failed for ${entry.nodeSetUrl}`,
+              cause,
+            ),
           ),
         )
 
@@ -270,7 +272,9 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         entries: ReadonlyArray<NodeSetCatalogEntry>,
       ) {
         if (entries.length === 0) {
-          yield* Effect.logInfo("No NodeSet entries provided; returning empty set")
+          yield* Effect.logInfo(
+            "No NodeSet entries provided; returning empty set",
+          )
           return new NodeSet({ namespaces: [], nodes: [] })
         }
 
@@ -299,12 +303,12 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         return merged
       })
 
-      const loadNodeSetBySlug = Effect.fn(
-        "NodeSetLoader.loadNodeSetBySlug",
-      )(function* (slug: string) {
-        const entry = yield* catalog.resolve(slug)
-        return yield* loadNodeSet(entry)
-      })
+      const loadNodeSetBySlug = Effect.fn("NodeSetLoader.loadNodeSetBySlug")(
+        function* (slug: string) {
+          const entry = yield* catalog.resolve(slug)
+          return yield* loadNodeSet(entry)
+        },
+      )
 
       const loadDefaultNodeSets = Effect.fn(
         "NodeSetLoader.loadDefaultNodeSets",
@@ -320,5 +324,6 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         loadDefaultNodeSets,
       } as const
     }),
+    dependencies: [NodeSetCatalog.Default, NodeHttpClient.layerUndici],
   },
 ) {}

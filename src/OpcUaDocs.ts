@@ -2,6 +2,7 @@ import { Cache, Duration, Effect, Layer, Option, Schema, Array } from "effect"
 import { McpServer, Tool, Toolkit } from "@effect/ai"
 import Minisearch from "minisearch"
 import { NodeSetLoader } from "./opcua/NodeSetLoader.js"
+import { NodeSetCatalog } from "./opcua/NodeSetCatalog.js"
 import { NodeGraph, NodeGraphEntry } from "./opcua/NodeGraph.js"
 import {
   NodeDocumentEntry,
@@ -263,7 +264,7 @@ const ToolkitHandlers = toolkit
       } as const
     }),
   )
-  .pipe(Layer.provide([NodeSetLoader.Default, NodeGraph.Default]))
+  .pipe(Layer.provide([NodeSetCatalog.Default, NodeSetLoader.Default, NodeGraph.Default]))
 
 // Register the toolkit with the MCP server
 export const OpcUaDocsTools = McpServer.toolkit(toolkit).pipe(
