@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "opcua": {
+      "command": "node",
+      "args": ["/Users/pooks/Dev/effect-opc-ua/dist/main.cjs"]
+    }
+  }
+}

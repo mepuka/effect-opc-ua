@@ -1,6 +1,0 @@
-ignoredBuiltDependencies:
-  - '@parcel/watcher'
-  - msgpackr-extract
-
-onlyBuiltDependencies:
-  - esbuild
