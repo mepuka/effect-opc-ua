@@ -1,7 +1,6 @@
 import { Effect, Schedule, Duration, Array, Data, Option } from "effect"
 import { HttpClient } from "@effect/platform"
 import { XMLParser } from "fast-xml-parser"
-import { Schema } from "effect"
 import {
   NodeId,
   ParsedUANode,
@@ -10,17 +9,9 @@ import {
   NamespaceMetadata,
   NodeSet,
   NodeClass,
+  NodeSetCatalogEntry,
 } from "./types.js"
-
-// URLs for OPC UA NodeSet XML files
-const nodeSetUrls = [
-  // Core OPC UA namespace
-  "https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/latest/Schema/Opc.Ua.NodeSet2.xml",
-  // Device Integration
-  "https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/latest/DI/Opc.Ua.Di.NodeSet2.xml",
-  // PackML
-  "https://raw.githubusercontent.com/OPCFoundation/UA-Nodeset/latest/PackML/Opc.Ua.PackML.NodeSet2.xml",
-]
+import { NodeSetCatalog } from "./NodeSetCatalog.js"
 
 const retryPolicy = Schedule.spaced(Duration.seconds(3))
 
@@ -29,10 +20,19 @@ class NodeSetLoaderError extends Data.TaggedError("NodeSetLoaderError")<{
   message: string
 }> {}
 
+const mergeNodeSets = (
+  nodeSets: ReadonlyArray<NodeSet>,
+): NodeSet =>
+  new NodeSet({
+    namespaces: nodeSets.flatMap((ns) => ns.namespaces),
+    nodes: nodeSets.flatMap((ns) => ns.nodes),
+  })
+
 export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
   "NodeSetLoader",
   {
     scoped: Effect.gen(function* () {
+      const catalog = yield* NodeSetCatalog
       const client = yield* HttpClient.HttpClient
       const retryingClient = client.pipe(
         HttpClient.filterStatusOk,
@@ -111,7 +111,11 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         return "Object"
       }
 
-      const parseNode = (nodeData: any, tagName: string): ParsedUANode => {
+      const parseNode = (
+        nodeData: any,
+        tagName: string,
+        resolveNamespaceUri: (index: number) => string | undefined,
+      ): ParsedUANode => {
         const nodeClass = getNodeClass(tagName)
         const displayName =
           parseLocalizedText(nodeData.DisplayName) ||
@@ -121,13 +125,17 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
             ? parseLocalizedText(nodeData.Description)
             : undefined
 
+        const nodeId = parseNodeId(nodeData["@_NodeId"])
+        const namespaceUri = resolveNamespaceUri(nodeId.namespaceIndex)
+
         return new ParsedUANode({
-          nodeId: parseNodeId(nodeData["@_NodeId"]),
+          nodeId,
           nodeClass,
           browseName: nodeData["@_BrowseName"] || "",
           displayName,
           description: description ? Option.some(description) : Option.none(),
           references: parseReferences(nodeData.References),
+          namespaceUri: namespaceUri ?? undefined,
           dataType: nodeData["@_DataType"],
           valueRank: nodeData["@_ValueRank"],
           isAbstract: nodeData["@_IsAbstract"],
@@ -135,27 +143,56 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         })
       }
 
-      const parseNodeSetXml = (xmlContent: string): NodeSet => {
+      const parseNodeSetXml = (
+        xmlContent: string,
+        entry: NodeSetCatalogEntry,
+      ): NodeSet => {
         const parsed = xmlParser.parse(xmlContent)
         const nodeSet = parsed.UANodeSet || parsed
 
-        // Parse namespace URIs
+        const publicationDate = nodeSet["@_PublicationDate"]
+        const version = nodeSet["@_Version"]
+
         const namespaces: NamespaceMetadata[] = []
-        const nsUris = nodeSet.NamespaceUris?.Uri
-        if (nsUris) {
-          const uriArray = Array.isArray(nsUris) ? nsUris : [nsUris]
-          uriArray.forEach((uri: string) => {
+        const namespaceLookup: string[] = []
+
+        const registerNamespace = (uri: string | undefined, index: number) => {
+          if (!uri) return
+          namespaceLookup[index] = uri
+          if (!namespaces.some((ns) => ns.uri === uri)) {
             namespaces.push(
               new NamespaceMetadata({
                 uri,
-                publicationDate: nodeSet["@_PublicationDate"],
-                version: nodeSet["@_Version"],
+                publicationDate,
+                version,
               }),
             )
+          }
+        }
+
+        if (entry.namespaceUris.length > 0) {
+          registerNamespace(entry.namespaceUris[0], 0)
+        }
+
+        const nsUris = nodeSet.NamespaceUris?.Uri
+        if (nsUris) {
+          const uriArray = Array.isArray(nsUris) ? nsUris : [nsUris]
+          uriArray.forEach((uri: string, index: number) => {
+            registerNamespace(uri, index + 1)
           })
         }
 
-        // Parse nodes
+        entry.namespaceUris.forEach((uri, index) => {
+          if (!namespaceLookup[index]) {
+            registerNamespace(uri, index)
+          }
+        })
+
+        const resolveNamespaceUri = (namespaceIndex: number) =>
+          namespaceLookup[namespaceIndex] ??
+          entry.namespaceUris[namespaceIndex] ??
+          entry.namespaceUris[0]
+
         const nodes: ParsedUANode[] = []
         const nodeTypes = [
           "UAObject",
@@ -173,7 +210,7 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
           if (nodeData) {
             const nodeArray = Array.isArray(nodeData) ? nodeData : [nodeData]
             for (const node of nodeArray) {
-              nodes.push(parseNode(node, nodeType))
+              nodes.push(parseNode(node, nodeType, resolveNamespaceUri))
             }
           }
         }
@@ -182,78 +219,106 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
       }
 
       const loadNodeSet = Effect.fn("NodeSetLoader.loadNodeSet")(function* (
-        url: string,
+        entry: NodeSetCatalogEntry,
       ) {
-        yield* Effect.logInfo(`Loading NodeSet from ${url}`)
-        yield* Effect.annotateCurrentSpan({ url })
+        yield* Effect.logInfo(
+          `Loading NodeSet ${entry.name} (${entry.slug}) from ${entry.nodeSetUrl}`,
+        )
+        yield* Effect.annotateCurrentSpan({
+          slug: entry.slug,
+          url: entry.nodeSetUrl,
+        })
 
         const response = yield* retryingClient
-          .get(url)
+          .get(entry.nodeSetUrl)
           .pipe(
             Effect.tapErrorCause((cause) =>
-              Effect.logError(`HTTP request failed for ${url}`, cause),
+              Effect.logError(
+                `HTTP request failed for ${entry.nodeSetUrl}`,
+                cause,
+              ),
             ),
           )
 
         const xmlContent = yield* response.text
 
         const nodeSet = yield* Effect.try({
-          try: () => parseNodeSetXml(xmlContent),
+          try: () => parseNodeSetXml(xmlContent, entry),
           catch: (cause) =>
             new NodeSetLoaderError({
               cause,
-              message: `Failed to parse NodeSet XML from ${url}`,
+              message: `Failed to parse NodeSet XML from ${entry.nodeSetUrl}`,
             }),
         }).pipe(
           Effect.tapErrorCause((cause) =>
-            Effect.logError(`XML parsing failed for ${url}`, cause),
+            Effect.logError(`XML parsing failed for ${entry.nodeSetUrl}`, cause),
           ),
         )
 
         yield* Effect.logInfo(
-          `Loaded ${nodeSet.nodes.length} nodes from ${url}`,
+          `Loaded ${nodeSet.nodes.length} nodes for catalog slug ${entry.slug}`,
         )
-        yield* Effect.annotateCurrentSpan({ nodeCount: nodeSet.nodes.length })
+        yield* Effect.annotateCurrentSpan({
+          nodeCount: nodeSet.nodes.length,
+          namespaceUris: entry.namespaceUris.join(","),
+        })
 
         return nodeSet
       })
 
-      const loadAllNodeSets = Effect.fn("NodeSetLoader.loadAllNodeSets")(
-        function* () {
-          yield* Effect.logInfo(
-            `Loading ${nodeSetUrls.length} NodeSet files concurrently`,
-          )
-          yield* Effect.annotateCurrentSpan({
-            nodeSetCount: nodeSetUrls.length,
-          })
+      const loadNodeSets = Effect.fn("NodeSetLoader.loadNodeSets")(function* (
+        entries: ReadonlyArray<NodeSetCatalogEntry>,
+      ) {
+        if (entries.length === 0) {
+          yield* Effect.logInfo("No NodeSet entries provided; returning empty set")
+          return new NodeSet({ namespaces: [], nodes: [] })
+        }
 
-          const nodeSets = yield* Effect.forEach(
-            nodeSetUrls,
-            (url) => loadNodeSet(url),
-            { concurrency: 2 },
-          ).pipe(
-            Effect.tapErrorCause((cause) =>
-              Effect.logError("Failed to load all NodeSets", cause),
-            ),
-          )
+        yield* Effect.logInfo(
+          `Loading ${entries.length} NodeSet entries with concurrency 2`,
+        )
+        yield* Effect.annotateCurrentSpan({ nodeSetCount: entries.length })
 
-          // Merge all node sets
-          const allNamespaces = nodeSets.flatMap((ns) => ns.namespaces)
-          const allNodes = nodeSets.flatMap((ns) => ns.nodes)
+        const nodeSets = yield* Effect.forEach(
+          entries,
+          (entry) => loadNodeSet(entry),
+          { concurrency: 2 },
+        ).pipe(
+          Effect.tapErrorCause((cause) =>
+            Effect.logError("Failed to load one or more NodeSets", cause),
+          ),
+        )
 
-          yield* Effect.logInfo(
-            `Loaded total of ${allNodes.length} nodes from ${nodeSetUrls.length} NodeSets`,
-          )
-          yield* Effect.annotateCurrentSpan({ totalNodes: allNodes.length })
+        const merged = mergeNodeSets(nodeSets)
 
-          return new NodeSet({
-            namespaces: allNamespaces,
-            nodes: allNodes,
-          })
-        },
-      )
+        yield* Effect.logInfo(
+          `Loaded total of ${merged.nodes.length} nodes from ${entries.length} NodeSets`,
+        )
+        yield* Effect.annotateCurrentSpan({ totalNodes: merged.nodes.length })
 
-      return { loadNodeSet, loadAllNodeSets } as const
+        return merged
+      })
+
+      const loadNodeSetBySlug = Effect.fn(
+        "NodeSetLoader.loadNodeSetBySlug",
+      )(function* (slug: string) {
+        const entry = yield* catalog.resolve(slug)
+        return yield* loadNodeSet(entry)
+      })
+
+      const loadDefaultNodeSets = Effect.fn(
+        "NodeSetLoader.loadDefaultNodeSets",
+      )(function* () {
+        const defaults = yield* catalog.defaults()
+        return yield* loadNodeSets(defaults)
+      })
+
+      return {
+        loadNodeSet,
+        loadNodeSets,
+        loadNodeSetBySlug,
+        loadDefaultNodeSets,
+      } as const
     }),
   },
 ) {}

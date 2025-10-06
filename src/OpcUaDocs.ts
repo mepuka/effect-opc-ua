@@ -132,7 +132,7 @@ const ToolkitHandlers = toolkit
       const graph = yield* NodeGraph
 
       // Load all NodeSets
-      const nodeSet = yield* loader.loadAllNodeSets()
+      const nodeSet = yield* loader.loadDefaultNodeSets()
 
       // Build the graph
       yield* graph.buildGraph(nodeSet.nodes)
