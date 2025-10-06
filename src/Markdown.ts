@@ -1,4 +1,4 @@
-import { Effect, Layer, ServiceMap } from "effect"
+import { Effect, Layer } from "effect"
 import { unified } from "unified"
 import remarkParse from "remark-parse"
 import remarkStringify from "remark-stringify"
@@ -12,8 +12,10 @@ type NodeWithChildren = Node & {
   children: Array<NodeWithChildren>
 }
 
-export class Markdown extends ServiceMap.Key<Markdown>()("Markdown", {
-  make: Effect.gen(function* () {
+export class Markdown extends Effect.Service<Markdown>()("Markdown", {
+  accessors: true,
+
+  effect: Effect.gen(function* () {
     const processor = unified()
       .use(remarkParse)
       .use(remarkFrontmatter)
@@ -63,6 +65,7 @@ export class Markdown extends ServiceMap.Key<Markdown>()("Markdown", {
 
     return { process } as const
   }),
+  dependencies: [],
 }) {
-  static layer = Layer.effect(this)(this.make)
+  static layer = Layer
 }
