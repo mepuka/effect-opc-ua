@@ -71,6 +71,29 @@ export class NodeSet extends Schema.Class<NodeSet>("NodeSet")({
   nodes: Schema.Array(ParsedUANode),
 }) {}
 
+// NodeSet catalog metadata
+export const NodeSetSlug = Schema.String.pipe(
+  Schema.annotations({
+    description: "Unique identifier for a NodeSet catalog entry",
+  }),
+)
+export type NodeSetSlug = Schema.Schema.Type<typeof NodeSetSlug>
+
+export class NodeSetCatalogEntry extends Schema.Class<NodeSetCatalogEntry>(
+  "NodeSetCatalogEntry",
+)({
+  slug: NodeSetSlug,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  category: Schema.optional(Schema.String),
+  documentationUrl: Schema.optional(Schema.String),
+  tags: Schema.Array(Schema.String),
+  namespaceUris: Schema.Array(Schema.String),
+  nodeSetUrl: Schema.String,
+  dependencies: Schema.Array(NodeSetSlug),
+  defaultSelection: Schema.Boolean,
+}) {}
+
 // Document entry for search results
 export interface NodeDocumentEntry {
   readonly id: number
