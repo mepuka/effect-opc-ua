@@ -18,6 +18,8 @@ MCP server for OPC UA NodeSet exploration using Effect. Provides semantic search
 
 ## Installation
 
+### NPM Package
+
 ```bash
 npx -y opc-ua-mcp@latest
 ```
@@ -31,6 +33,26 @@ npx -y opc-ua-mcp@latest
     "args": ["-y", "opc-ua-mcp@latest"]
   }
 }
+```
+
+### Docker
+
+**Build:**
+
+```bash
+docker build -t opc-ua-mcp .
+```
+
+**Run:**
+
+```bash
+docker run --rm opc-ua-mcp
+```
+
+**Run in background:**
+
+```bash
+docker run -d --name opc-ua-mcp-server opc-ua-mcp
 ```
 
 ## Status & Limitations
