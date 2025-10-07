@@ -1,4 +1,4 @@
-import { Effect, HashMap } from "effect"
+import { Effect, HashMap, Option, Ref } from "effect"
 import { ParsedUANode } from "./types.js"
 
 export interface ReferenceGroup {
@@ -15,8 +15,8 @@ export interface NodeGraphEntry {
 
 export class NodeGraph extends Effect.Service<NodeGraph>()("NodeGraph", {
   scoped: Effect.gen(function* () {
-    let nodeMap = HashMap.empty<string, NodeGraphEntry>()
-    let initialized = false
+    const nodeMapRef = yield* Ref.make(HashMap.empty<string, NodeGraphEntry>())
+    const initializedRef = yield* Ref.make(false)
 
     const buildGraph = Effect.fn("NodeGraph.buildGraph")(function* (
       nodes: ReadonlyArray<ParsedUANode>,
@@ -24,32 +24,75 @@ export class NodeGraph extends Effect.Service<NodeGraph>()("NodeGraph", {
       yield* Effect.logInfo(`Building node graph with ${nodes.length} nodes`)
       yield* Effect.annotateCurrentSpan({ nodeCount: nodes.length })
 
-      // First pass: Create entries for all nodes
-      const tempMap = new Map<string, NodeGraphEntry>()
+      let forwardGroups =
+        HashMap.empty<string, HashMap.HashMap<string, ReadonlyArray<string>>>()
+      let inverseGroups =
+        HashMap.empty<string, HashMap.HashMap<string, ReadonlyArray<string>>>()
 
       for (const node of nodes) {
-        const nodeIdStr = node.nodeId.toString()
+        const nodeId = node.nodeId.toString()
 
-        // Group forward references by type
-        const forwardRefMap = new Map<string, string[]>()
+        let nodeForward = Option.getOrElse(
+          HashMap.get(forwardGroups, nodeId),
+          () => HashMap.empty<string, ReadonlyArray<string>>(),
+        )
+
         for (const ref of node.references) {
-          if (ref.isForward) {
-            const targetId = ref.targetNodeId.toString()
-            if (!forwardRefMap.has(ref.referenceType)) {
-              forwardRefMap.set(ref.referenceType, [])
-            }
-            forwardRefMap.get(ref.referenceType)!.push(targetId)
+          if (!ref.isForward) {
+            continue
           }
+
+          const targetId = ref.targetNodeId.toString()
+
+          const currentForwardTargets = Option.getOrElse(
+            HashMap.get(nodeForward, ref.referenceType),
+            () => [] as ReadonlyArray<string>,
+          )
+
+          nodeForward = HashMap.set(nodeForward, ref.referenceType, [
+            ...currentForwardTargets,
+            targetId,
+          ])
+
+          const currentInverseMap = Option.getOrElse(
+            HashMap.get(inverseGroups, targetId),
+            () => HashMap.empty<string, ReadonlyArray<string>>(),
+          )
+
+          const currentInverseTargets = Option.getOrElse(
+            HashMap.get(currentInverseMap, ref.referenceType),
+            () => [] as ReadonlyArray<string>,
+          )
+
+          const updatedInverseMap = HashMap.set(
+            currentInverseMap,
+            ref.referenceType,
+            [...currentInverseTargets, nodeId],
+          )
+
+          inverseGroups = HashMap.set(inverseGroups, targetId, updatedInverseMap)
         }
 
-        const forwardReferences = Array.from(forwardRefMap.entries()).map(
+        forwardGroups = HashMap.set(forwardGroups, nodeId, nodeForward)
+      }
+
+      let graphMap = HashMap.empty<string, NodeGraphEntry>()
+
+      for (const node of nodes) {
+        const nodeId = node.nodeId.toString()
+        const forwardMap = Option.getOrElse(
+          HashMap.get(forwardGroups, nodeId),
+          () => HashMap.empty<string, ReadonlyArray<string>>(),
+        )
+
+        const forwardReferences = Array.from(HashMap.entries(forwardMap)).map(
           ([referenceType, targets]) => ({
             referenceType,
             targets,
           }),
         )
 
-        tempMap.set(nodeIdStr, {
+        graphMap = HashMap.set(graphMap, nodeId, {
           node,
           forwardReferences,
           inverseReferences: [],
@@ -57,41 +100,27 @@ export class NodeGraph extends Effect.Service<NodeGraph>()("NodeGraph", {
         })
       }
 
-      // Second pass: Build inverse references
-      for (const [nodeId, entry] of tempMap.entries()) {
-        const inverseRefMap = new Map<string, string[]>()
-
-        for (const node of nodes) {
-          for (const ref of node.references) {
-            if (ref.isForward && ref.targetNodeId.toString() === nodeId) {
-              const sourceId = node.nodeId.toString()
-              if (!inverseRefMap.has(ref.referenceType)) {
-                inverseRefMap.set(ref.referenceType, [])
-              }
-              inverseRefMap.get(ref.referenceType)!.push(sourceId)
-            }
-          }
+      for (const node of nodes) {
+        const nodeId = node.nodeId.toString()
+        const entry = HashMap.get(graphMap, nodeId)
+        if (Option.isNone(entry)) {
+          continue
         }
 
-        const inverseReferences = Array.from(inverseRefMap.entries()).map(
+        const inverseMap = Option.getOrElse(
+          HashMap.get(inverseGroups, nodeId),
+          () => HashMap.empty<string, ReadonlyArray<string>>(),
+        )
+
+        const inverseReferences = Array.from(HashMap.entries(inverseMap)).map(
           ([referenceType, targets]) => ({
             referenceType,
             targets,
           }),
         )
 
-        tempMap.set(nodeId, {
-          ...entry,
-          inverseReferences,
-        })
-      }
-
-      // Third pass: Build browse paths (simplified - just parent/child)
-      for (const [nodeId, entry] of tempMap.entries()) {
-        let browsePath = entry.node.browseName
-
-        // Find parent through HasComponent or Organizes references
-        const parentRefs = entry.node.references.filter(
+        let browsePath = entry.value.node.browseName
+        const parentRefs = entry.value.node.references.filter(
           (ref) =>
             !ref.isForward &&
             (ref.referenceType.includes("HasComponent") ||
@@ -101,33 +130,41 @@ export class NodeGraph extends Effect.Service<NodeGraph>()("NodeGraph", {
 
         if (parentRefs.length > 0) {
           const parentId = parentRefs[0].targetNodeId.toString()
-          const parentEntry = tempMap.get(parentId)
-          if (parentEntry) {
-            browsePath = `${parentEntry.node.browseName}/${browsePath}`
+          const parentEntry = HashMap.get(graphMap, parentId)
+          if (Option.isSome(parentEntry)) {
+            browsePath = `${parentEntry.value.browsePath}/${browsePath}`
           }
         }
 
-        tempMap.set(nodeId, {
-          ...entry,
+        graphMap = HashMap.set(graphMap, nodeId, {
+          ...entry.value,
+          inverseReferences,
           browsePath,
         })
       }
 
-      // Convert to HashMap
-      nodeMap = HashMap.fromIterable(tempMap.entries())
-      initialized = true
+      yield* Ref.set(nodeMapRef, graphMap)
+      yield* Ref.set(initializedRef, true)
 
-      yield* Effect.logInfo(`Node graph built with ${tempMap.size} entries`)
-      yield* Effect.annotateCurrentSpan({ graphSize: tempMap.size })
+      yield* Effect.logInfo(
+        `Node graph built with ${HashMap.size(graphMap)} entries`,
+      )
+      yield* Effect.annotateCurrentSpan({ graphSize: HashMap.size(graphMap) })
     })
 
     const getNode = (nodeId: string) =>
-      Effect.sync(() => HashMap.get(nodeMap, nodeId))
+      Effect.gen(function* () {
+        const map = yield* Ref.get(nodeMapRef)
+        return HashMap.get(map, nodeId)
+      })
 
     const getAllNodes = () =>
-      Effect.sync(() => Array.from(HashMap.values(nodeMap)))
+      Effect.gen(function* () {
+        const map = yield* Ref.get(nodeMapRef)
+        return Array.from(HashMap.values(map))
+      })
 
-    const isInitialized = () => Effect.succeed(initialized)
+    const isInitialized = () => Ref.get(initializedRef)
 
     return {
       buildGraph,
