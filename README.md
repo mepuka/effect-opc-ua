@@ -19,7 +19,7 @@ MCP server for OPC UA NodeSet exploration using Effect. Provides semantic search
 ## Installation
 
 ```bash
-npx -y effect-opc-ua@latest
+npx -y opc-ua-mcp@latest
 ```
 
 **Cursor MCP config:**
@@ -28,7 +28,7 @@ npx -y effect-opc-ua@latest
 {
   "opcua-mcp": {
     "command": "npx",
-    "args": ["-y", "effect-opc-ua@latest"]
+    "args": ["-y", "opc-ua-mcp@latest"]
   }
 }
 ```

@@ -14,7 +14,7 @@ const read = pipe(
     description: json.description,
     // Publish only the built CLI entry as CJS
     bin: {
-      "effect-opcua-mcp": "main.cjs",
+      "opc-ua-mcp": "main.cjs",
     },
     // Keep essential metadata
     engines: json.engines,

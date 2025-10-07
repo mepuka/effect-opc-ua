@@ -1,5 +1,5 @@
 {
-  "name": "effect-opc-ua",
+  "name": "opc-ua-mcp",
   "version": "0.1.14",
   "type": "module",
   "publishConfig": {
@@ -7,7 +7,7 @@
     "directory": "dist"
   },
   "bin": {
-    "effect-opcua-mcp": "./dist/main.cjs"
+    "opc-ua-mcp": "./dist/main.cjs"
   },
   "files": [
     "dist",
