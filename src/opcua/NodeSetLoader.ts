@@ -1,6 +1,6 @@
 import { Cache, Data, Duration, Effect, Option, Schedule } from "effect"
 import { HttpClient, HttpClientRequest, KeyValueStore } from "@effect/platform"
-import { NodeHttpClient } from "@effect/platform-node"
+import { NodeHttpClient, NodeKeyValueStore } from "@effect/platform-node"
 import { XMLParser } from "fast-xml-parser"
 import {
   LocalizedText,
@@ -13,6 +13,7 @@ import {
   Reference,
 } from "./types.js"
 import { NodeSetCatalog, NodeSetCatalogNotFound } from "./NodeSetCatalog.js"
+import { Console } from "effect/Console"
 
 const retryPolicy = Schedule.spaced(Duration.seconds(3))
 
@@ -78,16 +79,20 @@ export class NodeSetLoaderSource extends Effect.Service<NodeSetLoaderSource>()(
 
         return new NodeId({ namespaceIndex, identifierType, identifier })
       }
-
       const parseLocalizedText = (text: any): LocalizedText | undefined => {
         if (!text) return undefined
+
         if (typeof text === "string") {
           return new LocalizedText({ text })
         }
-        return new LocalizedText({
-          locale: text?.["@_Locale"],
-          text: text?.["#text"] || text || "",
-        })
+
+        if (typeof text === "object") {
+          const locale = text["@_Locale"]
+          const body = text["#text"] ?? text["Text"] ?? ""
+          return new LocalizedText({ locale, text: body })
+        }
+
+        return new LocalizedText({ text: String(text) })
       }
 
       const parseReferences = (refs: any): Reference[] => {
@@ -254,6 +259,9 @@ export class NodeSetLoaderSource extends Effect.Service<NodeSetLoaderSource>()(
                 message: `Failed to parse NodeSet XML from ${entry.nodeSetUrl}`,
               }),
           }).pipe(
+            Effect.tap((nodeSet) =>
+              Effect.log(`Parsed NodeSet XML from ${xmlContent}`),
+            ),
             Effect.tapErrorCause((cause) =>
               Effect.logError(
                 `XML parsing failed for ${entry.nodeSetUrl}`,
@@ -337,7 +345,11 @@ export class NodeSetLoaderSource extends Effect.Service<NodeSetLoaderSource>()(
         loadDefaultNodeSets,
       } as const
     }),
-    dependencies: [NodeSetCatalog.Default, NodeHttpClient.layerUndici],
+    dependencies: [
+      NodeSetCatalog.Default,
+      NodeHttpClient.layerUndici,
+      NodeKeyValueStore.layerFileSystem("/tmp/opcua-mcp-cache"),
+    ],
   },
 ) {}
 
@@ -573,6 +585,10 @@ export class NodeSetLoader extends Effect.Service<NodeSetLoader>()(
         ingestNodeSet,
       } as const
     }),
-    dependencies: [NodeSetCatalog.Default, NodeSetLoaderSource.Default],
+    dependencies: [
+      NodeSetCatalog.Default,
+      NodeSetLoaderSource.Default,
+      NodeKeyValueStore.layerFileSystem("/tmp/opcua-mcp-cache"),
+    ],
   },
 ) {}

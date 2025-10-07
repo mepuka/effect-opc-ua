@@ -255,6 +255,7 @@ const matchesQuery = (query: string, entry: NodeSetCatalogEntry): boolean => {
 
   return haystack.includes(query)
 }
+const NODESETS_CONTAIN_MALFORMED_XML = ["woodworking"]
 
 export class NodeSetCatalog extends Effect.Service<NodeSetCatalog>()(
   "NodeSetCatalog",

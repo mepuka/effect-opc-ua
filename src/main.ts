@@ -3,13 +3,14 @@ import { Layer, Logger, LogLevel } from "effect"
 import {
   NodeStream,
   NodeSink,
+  NodeContext,
   NodeRuntime,
-  NodeKeyValueStore,
 } from "@effect/platform-node"
 import { OpcUaDocsTools } from "./OpcUaDocs.js"
 import { OpcUaNodeSetTools } from "./OpcUaNodeSets.js"
 import { OpcUaGuides } from "./OpcUaGuides.js"
 import { McpServer } from "@effect/ai"
+import { KeyValueStore } from "@effect/platform"
 
 // Compose all MCP features and launch
 McpServer.layerStdio({
@@ -18,9 +19,13 @@ McpServer.layerStdio({
   stdin: NodeStream.stdin,
   stdout: NodeSink.stdout,
 }).pipe(
-  Layer.provide([OpcUaDocsTools, OpcUaNodeSetTools, OpcUaGuides]),
-  Layer.provideMerge(NodeKeyValueStore.layerFileSystem("/tmp/opcua-mcp-cache")),
+  Layer.provide(NodeContext.layer),
+  Layer.provideMerge(
+    Layer.mergeAll(OpcUaDocsTools, OpcUaNodeSetTools, OpcUaGuides),
+  ),
+  Layer.provide(KeyValueStore.layerMemory),
   Layer.provide(Logger.minimumLogLevel(LogLevel.Info)),
+
   Layer.launch,
   NodeRuntime.runMain,
 )
